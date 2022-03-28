@@ -63,68 +63,70 @@ export const XRPContext = React.createContext();
 
  ```
  
- # Zustand Redux Store that actually triggers payment and waits for confirmation (https://github.com/berrysupport/xrp-coupon-widget/tree/main/src/store/xrp)
+ # Zustand Redux Store that actually triggers payment and waits for confirmation 
+ Code (https://github.com/berrysupport/xrp-coupon-widget/tree/main/src/store/xrp)
  ```
- 	postXRPPayments: async ({ client, wallet, merchantXRPAddress, lookPrice, lookDiscount,  lookId,  }) => {
+postXRPPayments: async ({ client, wallet, merchantXRPAddress, lookPrice, lookDiscount,  lookId,  }) => {
+	set(produce(state => ({
+		...state,
+		xrpPayments: {
+			...state.xrpPayments,
+			post: {
+				...INITIAL_XRP_STATE.post,
+				loading: true,
+			}
+		}
+	})))
+
+	try {
+
+		/* START XRP PAYMENT */
+		const xrpPaymentForCoupon = await client.autofill({
+			"TransactionType": "Payment",
+			"Account": wallet.address,
+			"Amount": xrpl.xrpToDrops(lookPrice),
+			"Destination": merchantXRPAddress
+		});
+		const signed = wallet.sign(xrpPaymentForCoupon);
+		const tx = await client.submitAndWait(signed.tx_blob)
+		/* XRP PAYMENT COMPLETE */
+
+		/* NOW GENERATE COUPON WITH THE SHOPIFY API*/
+		const { data } = await axios.post(`${process.env.REACT_APP_API_SHOPLOOKS_SERVER_URL}/api/post_discount`, {
+			discount: { targetType: 'percentage', value: lookDiscount }
+		});
 		set(produce(state => ({
 			...state,
 			xrpPayments: {
 				...state.xrpPayments,
 				post: {
 					...INITIAL_XRP_STATE.post,
-					loading: true,
+					success: {
+						ok: true,
+						data
+					},
 				}
 			}
 		})))
+		return data;
 
-		try {
-
-			/* START XRP PAYMENT */
-			const xrpPaymentForCoupon = await client.autofill({
-				"TransactionType": "Payment",
-				"Account": wallet.address,
-				"Amount": xrpl.xrpToDrops(lookPrice),
-				"Destination": merchantXRPAddress
-			});
-			const signed = wallet.sign(xrpPaymentForCoupon);
-			const tx = await client.submitAndWait(signed.tx_blob)
-			/* XRP PAYMENT COMPLETE */
-
-			/* NOW GENERATE COUPON WITH THE SHOPIFY API*/
-			const { data } = await axios.post(`${process.env.REACT_APP_API_SHOPLOOKS_SERVER_URL}/api/post_discount`, {
-				discount: { targetType: 'percentage', value: lookDiscount }
-			});
-			set(produce(state => ({
-				...state,
-				xrpPayments: {
-					...state.xrpPayments,
-					post: {
-						...INITIAL_XRP_STATE.post,
-						success: {
-							ok: true,
-							data
-						},
-					}
+	} catch (e) {
+		set(produce(state => ({
+			...state,
+			xrpPayments: {
+				...state.xrpPayments,
+				post: {
+					...INITIAL_XRP_STATE.post,
+					failure: {
+						error: true,
+						message: e.message || INTERNAL_SERVER_ERROR
+					},
 				}
-			})))
-			return data;
-
-		} catch (e) {
-			console.error(e)
-			set(produce(state => ({
-				...state,
-				xrpPayments: {
-					...state.xrpPayments,
-					post: {
-						...INITIAL_XRP_STATE.post,
-						failure: {
-							error: true,
-							message: e.message || INTERNAL_SERVER_ERROR
-						},
-					}
-				}
-			})))
-			throw e;
-		}
-	},
+			}
+		})))
+		throw e;
+	}
+},
 ```
+
+# For more check the dependent libraries like api, cdn, client 
